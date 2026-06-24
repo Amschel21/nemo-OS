@@ -1,0 +1,185 @@
+===============================================================================
+ REPORTE DE ANÁLISIS - NemoOS
+===============================================================================
+
+1. DESCRIPCIÓN GENERAL
+------------------------------------------------------------------------------
+NemoOS es un sistema operativo hobby para la arquitectura x86 (i386) escrito
+desde cero en C++20 y Assembly (GAS/AT&T). Bootea mediante GRUB/Multiboot y
+se ejecuta en QEMU. El compilador usado es GNU g++ con flags freestanding
+(-ffreestanding -fno-exceptions -fno-rtti). No usa biblioteca estándar;
+implementa sus propias funciones libk (memcpy, memset, strcmp, strcpy, itoa).
+
+
+2. TECNOLOGÍAS UTILIZADAS
+------------------------------------------------------------------------------
+  Lenguaje (kernel)  : C++20 (-std=c++20, freestanding)
+  Lenguaje (low-level): x86 Assembly (GAS, AT&T syntax)
+  Build system       : GNU Make
+  Toolchain          : g++, as, ld (x86_64-linux-gnu a i386 cruzado)
+  Target             : i386 (32-bit, -m32)
+  Boot protocol      : Multiboot (GRUB)
+  Emulador           : QEMU (qemu-system-i386)
+  Linker script      : linker.ld (kernel en 1MB físico)
+  Control de versión : Git
+
+
+3. ESTRUCTURA DEL PROYECTO
+------------------------------------------------------------------------------
+  Directorio raíz:
+    Makefile         - Build system
+    linker.ld        - Script de enlazado
+    grub.cfg         - Configuración de GRUB
+    src/             - Código fuente completo
+
+  src/:
+    boot.s                    - Entry point (_start), multiboot header
+    kernel.cpp                - kernel_main: inicialización y main loop
+    terminal.cpp/.hpp         - Driver VGA text-mode (80x25)
+    arch/x86/
+      io.hpp                  - Incluye ports.hpp
+      ports.cpp/.hpp          - I/O de puertos (inb/outb/inw/outw/inl/outl)
+    boot/
+      multiboot.cpp/.hpp      - Parsing de información multiboot
+    drivers/
+      keyboard.cpp/.hpp       - Teclado: scancode -> ASCII (US)
+      keyboard_buffer.cpp/.hpp- Buffer circular de 256 bytes
+      timer.cpp/.hpp          - Timer PIT (100Hz)
+      timer_ticks.hpp         - Contador de ticks volátil
+    interrupts/
+      gdt.cpp/.hpp            - GDT: 6 entradas (null, kernel code/data,
+                                user code/data, TSS)
+      gdt_flush.s             - lgdt + far jump
+      idt.cpp/.hpp            - IDT: 256 entradas
+      idt_flush.s             - lidt
+      isr.cpp/.hpp            - isr_install() (vacio)
+      isr_stub.s              - Handlers: isr0, irq0, irq1, page_fault_stub
+      irq.cpp/.hpp            - handler IRQ (timer ticks + EOI)
+      keyboard_irq.cpp        - IRQ1: lee teclado, convierte, push a buffer
+      page_fault.cpp/.hpp     - Page fault: PANIC
+      pic.cpp/.hpp            - PIC 8259: remapeo a ints 32-47
+      syscall_stub.s          - int 0x80 handler
+      tss.cpp/.hpp            - Task State Segment
+      tss_flush.s             - ltr
+    kernel/
+      panic.cpp/.hpp          - Kernel panic
+    libk/
+      itoa.cpp/.hpp           - itoa
+      memory.cpp/.hpp         - memcpy, memset
+      string.cpp/.hpp         - strcmp, strncmp, strcpy
+    memory/
+      heap.cpp/.hpp           - VACIO (stub)
+      kmalloc.cpp/.hpp        - Bump allocator (16MB, sin free)
+      paging.cpp/.hpp         - Paginación (page directory, identity map 4MB)
+      pmm.cpp/.hpp            - VACIO (stub)
+      pmm_bitmap.cpp/.hpp     - PMM bitmap (1024MB, alloc/free page)
+      vmm.cpp/.hpp            - VACIO (stub)
+    fs/
+      ramfs.cpp/.hpp          - RAMFS (128 nodos, dirs, archivos)
+      vfs.cpp/.hpp            - VACIO (stub)
+    scheduler/
+      scheduler.cpp/.hpp      - Round-robin cooperativo (16 slots)
+      task.cpp/.hpp           - Crear tarea = registrar función
+    shell/
+      shell.cpp/.hpp          - Shell interactivo
+    syscalls/
+      syscall.cpp/.hpp        - int 0x80 dispatcher
+
+
+4. LÍNEAS DE CÓDIGO
+------------------------------------------------------------------------------
+  C++ source (.cpp)  : 27 archivos  - 1,446 líneas
+  C++ headers (.hpp) : 23 archivos  -   288 líneas
+  Assembly (.s)      :  6 archivos  -   126 líneas
+  Makefile           :  1 archivo   -    60 líneas
+  linker.ld          :  1 archivo   -    27 líneas
+  -------------------------------------------------
+  Total              : 58 archivos  - ~1,947 líneas
+
+
+5. ESTADO DE IMPLEMENTACIÓN
+------------------------------------------------------------------------------
+
+5.1. Implementado (funcional)
+  - Boot multiboot + GRUB ISO
+  - Terminal VGA (80x25, scroll, cursor, color, backspace)
+  - GDT (6 entradas: null, kernel code/data, user code/data, TSS)
+  - IDT (256 entradas, handlers para ISR0, IRQ0, IRQ1, page fault, syscall)
+  - PIC 8259 remapeado a ints 32-47
+  - Timer PIT 100Hz con contador de ticks
+  - Teclado PS/2 (scancode -> ASCII, buffer circular)
+  - PMM (gestor de memoria física por bitmap)
+  - Paginación (page directory/table, identity map 4MB, CR0.PG)
+  - Bump allocator (kmalloc en 16MB, alineado)
+  - Kernel panic (mensaje + archivo + línea + halt)
+  - Syscalls (int 0x80, syscall 1 = get_ticks)
+  - Shell interactivo (help, clear, echo, about, ticks, mem, pages, alloc,
+    free, kmalloc, halt, ls, touch, cat, write, mkdir, cd, pwd)
+  - RAMFS (128 inodos, directorios, archivos, r/w)
+  - Planificador cooperativo (16 slots, funciones como tareas)
+  - TSS (para stack de kernel en modo usuario)
+  - I/O de puertos (inb/outb/inw/outw/inl/outl)
+  - libk (memcpy, memset, strcmp, strncmp, strcpy, itoa)
+
+5.2. Parcial / Stub (incompleto)
+  - kmalloc/kfree: kfree es no-op (sin heap manager)
+  - Heap: heap.cpp/.hpp completamente vacío
+  - VMM (Virtual Memory Manager): vmm.cpp/.hpp vacío
+  - VFS (Virtual Filesystem): vfs.cpp/.hpp vacío
+  - PMM (separado): pmm.cpp/.hpp vacío (PMM real está en pmm_bitmap)
+  - ISR install: isr_install() es función vacía
+  - Scheduler: sin preempción (sin context switch por timer)
+  - Tasks: sin context switch, sin pilas, sin scheduling por syscall
+
+5.3. No implementado (ausente)
+  - Modo usuario (Ring 3) - TSS configurado pero sin switch a user mode
+  - Multitarea preemptiva - Timer IRQ no hace context switch
+  - Context switching - No hay switch_to / save-restore de tareas
+  - Procesos - No hay PCB, PID, ni aislamiento de memoria
+  - Cargador de ELF
+  - Drivers de disco (ATA/IDE)
+  - Sistema de archivos en disco (FAT, ext2, etc.)
+  - Networking (no hay stack de red)
+  - PCI (no hay enumeración de buses)
+  - USB
+  - IPC / señales
+  - Heap con liberación de memoria
+  - VMM (mapeo/desmapeo de páginas, resolución de page faults)
+  - RTC/CMOS
+  - Mouse PS/2
+  - Puerto serial/COM
+
+
+6. PORCENTAJE ESTIMADO DE COMPLETITUD
+------------------------------------------------------------------------------
+                        ~25-30%
+
+  Desglose por subsistema:
+    Boot/CPU init      :  90%  (multiboot, modo protegido, GDT, IDT, PIC,
+                                TSS, paginación funcionando)
+    Memoria            :  30%  (PMM funcional, paginación activa, pero VMM y
+                                heap ausentes, bump allocator sin free)
+    Drivers            :  20%  (teclado + timer funcionan, no hay disco,
+                                red, PCI, mouse, RTC)
+    Filesystem         :  20%  (RAMFS funcional, VFS vacío, sin FS en disco)
+    Scheduling         :  10%  (lista de tareas existe, sin preempción,
+                                sin context switch, sin modo usuario)
+    Shell/UX           :  60%  (shell funcional con varios comandos, pero
+                                sin ejecución de procesos)
+    Syscalls           :   5%  (1 syscall implementada de las decenas
+                                necesarias: fork, exec, open, read, write...)
+
+
+7. OBSERVACIONES
+------------------------------------------------------------------------------
+  - No hay README, TODO ni documentación (hasta ahora).
+  - No hay .gitignore: los objetos .o, kernel.bin y kernel.iso están
+    trackeados en git.
+  - Un solo commit ("init commit"): no hay historial de desarrollo.
+  - La versión reportada es "NemoOS v0.9" (impresa al bootear).
+  - Los comandos del shell están en español/portugués.
+  - Varios archivos stub vacíos (heap, vmm, pmm, vfs) indican subsistemas
+    planeados pero no iniciados.
+  - No hay enmascaramiento de IRQs más allá del remapeo básico del PIC.
+
+===============================================================================
