@@ -18,7 +18,7 @@ implementa sus propias funciones libk (memcpy, memset, strcmp, strcpy, itoa).
   Build system       : GNU Make
   Toolchain          : g++, as, ld (x86_64-linux-gnu a i386 cruzado)
   Target             : i386 (32-bit, -m32)
-  Boot protocol      : Multiboot (GRUB)
+  Boot protocol      : Multiboot (GRUB) / QEMU -kernel directo
   Emulador           : QEMU (qemu-system-i386)
   Linker script      : linker.ld (kernel en 1MB físico)
   Control de versión : Git
@@ -27,15 +27,20 @@ implementa sus propias funciones libk (memcpy, memset, strcmp, strcpy, itoa).
 3. ESTRUCTURA DEL PROYECTO
 ------------------------------------------------------------------------------
   Directorio raíz:
-    Makefile         - Build system
+    Makefile         - Build system (run, run-serial, debug, clean, rebuild)
     linker.ld        - Script de enlazado
-    grub.cfg         - Configuración de GRUB
+    grub.cfg         - Configuración de GRUB (timeout=2)
+    README.md        - Documentación del proyecto
+    reporte.txt      - Este reporte
+    kernel.bin       - Kernel binario compilado
+    kernel.iso       - ISO booteable
+    iso/             - Directorio para la ISO
     src/             - Código fuente completo
 
   src/:
     boot.s                    - Entry point (_start), multiboot header
     kernel.cpp                - kernel_main: inicialización y main loop
-    terminal.cpp/.hpp         - Driver VGA text-mode (80x25)
+    terminal.cpp/.hpp         - Driver VGA text-mode (80x25) + serial COM1
     arch/x86/
       io.hpp                  - Incluye ports.hpp
       ports.cpp/.hpp          - I/O de puertos (inb/outb/inw/outw/inl/outl)
@@ -47,15 +52,15 @@ implementa sus propias funciones libk (memcpy, memset, strcmp, strcpy, itoa).
       timer.cpp/.hpp          - Timer PIT (100Hz)
       timer_ticks.hpp         - Contador de ticks volátil
     interrupts/
-      gdt.cpp/.hpp            - GDT: 6 entradas (null, kernel code/data,
-                                user code/data, TSS)
+      gdt.cpp/.hpp            - GDT: 6 entradas
       gdt_flush.s             - lgdt + far jump
       idt.cpp/.hpp            - IDT: 256 entradas
       idt_flush.s             - lidt
       isr.cpp/.hpp            - isr_install() (vacio)
-      isr_stub.s              - Handlers: isr0, irq0, irq1, page_fault_stub
+      isr_stub.s              - Handlers: isr0, irq0 (con context switch),
+                                irq1, page_fault_stub
       irq.cpp/.hpp            - handler IRQ (timer ticks + EOI)
-      keyboard_irq.cpp        - IRQ1: lee teclado, convierte, push a buffer
+      keyboard_irq.cpp        - IRQ1: lee teclado, push a buffer
       page_fault.cpp/.hpp     - Page fault: PANIC
       pic.cpp/.hpp            - PIC 8259: remapeo a ints 32-47
       syscall_stub.s          - int 0x80 handler
@@ -69,73 +74,86 @@ implementa sus propias funciones libk (memcpy, memset, strcmp, strcpy, itoa).
       string.cpp/.hpp         - strcmp, strncmp, strcpy
     memory/
       heap.cpp/.hpp           - VACIO (stub)
-      kmalloc.cpp/.hpp        - Bump allocator (16MB, sin free)
-      paging.cpp/.hpp         - Paginación (page directory, identity map 4MB)
+      kmalloc.cpp/.hpp        - Heap real: free-list con boundary tags,
+                                split, coalesce, crecimiento automático
+      paging.cpp/.hpp         - Identity mapping de TODA la RAM,
+                                paging_map_page(), paging_map_identity()
       pmm.cpp/.hpp            - VACIO (stub)
-      pmm_bitmap.cpp/.hpp     - PMM bitmap (1024MB, alloc/free page)
+      pmm_bitmap.cpp/.hpp     - PMM bitmap (hasta 1024MB, alloc/free page)
       vmm.cpp/.hpp            - VACIO (stub)
     fs/
       ramfs.cpp/.hpp          - RAMFS (128 nodos, dirs, archivos)
       vfs.cpp/.hpp            - VACIO (stub)
     scheduler/
-      scheduler.cpp/.hpp      - Round-robin cooperativo (16 slots)
-      task.cpp/.hpp           - Crear tarea = registrar función
+      scheduler.cpp/.hpp      - Preemptivo: context switch via timer IRQ,
+                                round-robin, idle task management
+      task.cpp/.hpp           - Tareas con stack propio, frame de
+                                interrupción inicial para context switch
     shell/
-      shell.cpp/.hpp          - Shell interactivo
+      shell.cpp/.hpp          - Shell interactivo (testheap, kmalloc con
+                                escritura de datos)
     syscalls/
-      syscall.cpp/.hpp        - int 0x80 dispatcher
+      syscall.cpp/.hpp        - int 0x80 dispatcher: syscall 1 (get_ticks),
+                                2 (write terminal), 3 (read teclado)
 
 
 4. LÍNEAS DE CÓDIGO
 ------------------------------------------------------------------------------
-  C++ source (.cpp)  : 27 archivos  - 1,446 líneas
-  C++ headers (.hpp) : 23 archivos  -   288 líneas
-  Assembly (.s)      :  6 archivos  -   126 líneas
-  Makefile           :  1 archivo   -    60 líneas
+  C++ source (.cpp)  : 31 archivos  - 1,979 líneas
+  C++ headers (.hpp) : 23 archivos  -   300 líneas
+  Assembly (.s)      :  6 archivos  -   135 líneas
+  Makefile           :  1 archivo   -    69 líneas
   linker.ld          :  1 archivo   -    27 líneas
   -------------------------------------------------
-  Total              : 58 archivos  - ~1,947 líneas
+  Total (código)     : 62 archivos  - ~2,510 líneas
+  + README.md, reporte.txt
 
 
 5. ESTADO DE IMPLEMENTACIÓN
 ------------------------------------------------------------------------------
 
 5.1. Implementado (funcional)
-  - Boot multiboot + GRUB ISO
+  - Boot multiboot + GRUB ISO + QEMU -kernel directo
   - Terminal VGA (80x25, scroll, cursor, color, backspace)
+  - Serial COM1 (38400 baud) para debug - make run-serial
   - GDT (6 entradas: null, kernel code/data, user code/data, TSS)
   - IDT (256 entradas, handlers para ISR0, IRQ0, IRQ1, page fault, syscall)
   - PIC 8259 remapeado a ints 32-47
   - Timer PIT 100Hz con contador de ticks
-  - Teclado PS/2 (scancode -> ASCII, buffer circular)
-  - PMM (gestor de memoria física por bitmap)
-  - Paginación (page directory/table, identity map 4MB, CR0.PG)
-  - Bump allocator (kmalloc en 16MB, alineado)
-  - Kernel panic (mensaje + archivo + línea + halt)
-  - Syscalls (int 0x80, syscall 1 = get_ticks)
-  - Shell interactivo (help, clear, echo, about, ticks, mem, pages, alloc,
-    free, kmalloc, halt, ls, touch, cat, write, mkdir, cd, pwd)
+  - Teclado PS/2 (scancode -> ASCII, buffer circular de 256 bytes)
+  - PMM (gestor de memoria física por bitmap, 0-4MB reservado)
+  - Paginación: identity mapping de TODA la RAM disponible (hasta 512MB)
+  - paging_map_page(), paging_map_identity() para mapeo dinámico
+  - Heap con free-list: kmalloc/kfree con boundary tags, split,
+    coalescing con bloques adyacentes, crecimiento automático via PMM
+  - Kernel panic (mensaje + HLT)
+  - Syscalls: int 0x80 con syscall 1 (get_ticks), 2 (write terminal),
+    3 (read keyboard buffer)
+  - Shell interactivo (help, clear, echo, about, ticks, mem, pages,
+    alloc, free, kmalloc, testheap, halt, ls, touch, cat, write,
+    mkdir, cd, pwd)
   - RAMFS (128 inodos, directorios, archivos, r/w)
-  - Planificador cooperativo (16 slots, funciones como tareas)
+  - Scheduler preemptivo: context switch via timer IRQ, round-robin
+    entre tareas, idle cuando no hay tareas activas
+  - Tareas con stack propio (4KB) y frame de interrupción inicial
   - TSS (para stack de kernel en modo usuario)
   - I/O de puertos (inb/outb/inw/outw/inl/outl)
   - libk (memcpy, memset, strcmp, strncmp, strcpy, itoa)
+  - VMM: address spaces, vmm_create_space, vmm_map, vmm_unmap, vmm_switch
 
 5.2. Parcial / Stub (incompleto)
-  - kmalloc/kfree: kfree es no-op (sin heap manager)
-  - Heap: heap.cpp/.hpp completamente vacío
-  - VMM (Virtual Memory Manager): vmm.cpp/.hpp vacío
+  - ISR install: isr_install() es función vacía
+  - Heap: heap.cpp/.hpp vacío (el heap real está en kmalloc.cpp)
+  - VMM (Virtual Memory Manager): vmm.cpp/.hpp funcional (address spaces,
+    map, unmap, switch)
   - VFS (Virtual Filesystem): vfs.cpp/.hpp vacío
   - PMM (separado): pmm.cpp/.hpp vacío (PMM real está en pmm_bitmap)
-  - ISR install: isr_install() es función vacía
-  - Scheduler: sin preempción (sin context switch por timer)
-  - Tasks: sin context switch, sin pilas, sin scheduling por syscall
+  - Scheduler: preemptivo pero sin soporte de prioridades, sin bloqueo
+  - Tasks: sin PID formal, sin exit(), sin wait()
 
 5.3. No implementado (ausente)
   - Modo usuario (Ring 3) - TSS configurado pero sin switch a user mode
-  - Multitarea preemptiva - Timer IRQ no hace context switch
-  - Context switching - No hay switch_to / save-restore de tareas
-  - Procesos - No hay PCB, PID, ni aislamiento de memoria
+  - Procesos - No hay PCB formal, PID, ni aislamiento de memoria
   - Cargador de ELF
   - Drivers de disco (ATA/IDE)
   - Sistema de archivos en disco (FAT, ext2, etc.)
@@ -143,43 +161,117 @@ implementa sus propias funciones libk (memcpy, memset, strcmp, strcpy, itoa).
   - PCI (no hay enumeración de buses)
   - USB
   - IPC / señales
-  - Heap con liberación de memoria
-  - VMM (mapeo/desmapeo de páginas, resolución de page faults)
   - RTC/CMOS
   - Mouse PS/2
-  - Puerto serial/COM
+  - Syscalls: fork, exec, open, close, exit
 
 
 6. PORCENTAJE ESTIMADO DE COMPLETITUD
 ------------------------------------------------------------------------------
-                        ~25-30%
+                         ~40-45%
 
   Desglose por subsistema:
     Boot/CPU init      :  90%  (multiboot, modo protegido, GDT, IDT, PIC,
                                 TSS, paginación funcionando)
-    Memoria            :  30%  (PMM funcional, paginación activa, pero VMM y
-                                heap ausentes, bump allocator sin free)
-    Drivers            :  20%  (teclado + timer funcionan, no hay disco,
-                                red, PCI, mouse, RTC)
+    Memoria            :  60%  (PMM funcional, paginación expandida,
+                                identity map completa, heap real con
+                                free-list, VMM básico con address spaces)
+    Drivers            :  25%  (teclado + timer + serial COM1 funcionan;
+                                sin disco, red, PCI, mouse, RTC)
     Filesystem         :  20%  (RAMFS funcional, VFS vacío, sin FS en disco)
-    Scheduling         :  10%  (lista de tareas existe, sin preempción,
-                                sin context switch, sin modo usuario)
-    Shell/UX           :  60%  (shell funcional con varios comandos, pero
+    Scheduling         :  40%  (preemptivo con context switch funcional,
+                                round-robin; sin prioridades, sin bloqueo)
+    Shell/UX           :  60%  (shell funcional, testheap, kmalloc real;
                                 sin ejecución de procesos)
-    Syscalls           :   5%  (1 syscall implementada de las decenas
-                                necesarias: fork, exec, open, read, write...)
+    Syscalls           :  15%  (3 syscalls: get_ticks, write, read;
+                                decenas más necesarias)
 
 
-7. OBSERVACIONES
+7. CAMBIOS REALIZADOS (vs reporte anterior)
 ------------------------------------------------------------------------------
-  - No hay README, TODO ni documentación (hasta ahora).
-  - No hay .gitignore: los objetos .o, kernel.bin y kernel.iso están
-    trackeados en git.
-  - Un solo commit ("init commit"): no hay historial de desarrollo.
-  - La versión reportada es "NemoOS v0.9" (impresa al bootear).
-  - Los comandos del shell están en español/portugués.
-  - Varios archivos stub vacíos (heap, vmm, pmm, vfs) indican subsistemas
-    planeados pero no iniciados.
-  - No hay enmascaramiento de IRQs más allá del remapeo básico del PIC.
+  - PMM: páginas reservadas de 256 a 1024 (0-4MB, cubre kernel + VGA)
+  - Paging: identity mapping expandido de 4MB a toda la RAM disponible
+  - Paging: nuevas API públicas paging_map_page(), paging_map_identity()
+  - Heap: bump allocator reemplazado por free-list con boundary tags,
+    split en kmalloc, coalescing en kfree, crecimiento vía PMM
+  - Shell: comando kmalloc mejorado (escribe datos), nuevo testheap
+  - ISR stub: page_fault_stub corrige error code (+4B add %esp)
+  - ISR stub: irq0 modificado para llamar scheduler_tick() y hacer
+    context switch (push %esp; call scheduler_tick; mov %eax, %esp)
+  - Scheduler: reemplazado scheduler_run() cooperativo por
+    scheduler_tick() preemptivo con round-robin y idle management
+  - Task: ahora cada tarea tiene stack propio (4KB allocado via kmalloc)
+    y frame de interrupción inicial para primer context switch
+  - Terminal: agregado soporte serial COM1 (38400 baud)
+  - Makefile: agregado target run-serial (kernel + serial stdio)
+  - Makefile: targets run/debug usan -kernel (más rápido que ISO)
+  - grub.cfg: agregado timeout=2
+  - Bugfix crítico: scheduler_tick() tenía un camino sin return que
+    causaba triple fault en el primer timer IRQ después de sti.
+    Se agregó return idle_esp cuando no hay tareas activas.
+  - Syscalls: agregados syscall 2 (write terminal) y 3 (read teclado)
+  - Estabilidad: kmalloc ya no hace recursión infinita en OOM
+  - Estabilidad: task_create con cli/sti para proteger tabla de tareas
+  - Estabilidad: keyboard_buffer_push con overflow detection
+  - Task: reemplazado bool active por TaskState (FREE/READY/RUNNING)
+  - Task: agregado PID secuencial (next_pid)
+  - Scheduler: usa TaskState en vez de active, marca RUNNING/READY
+  - VMM: implementado vmm.hpp/.cpp con address spaces
+  - VMM: vmm_create_space(), vmm_map(), vmm_unmap(), vmm_switch()
+   - Version bump: NemoOS v0.9 -> v1.0
+   - Task trampoline: nuevo task_trampoline.s en ensamblador que captura
+     el retorno de la función de entrada de una tarea, la marca como DEAD
+     y hace hlt con interrupciones habilitadas
+   - Task: stack inicial ahora usa task_trampoline como EIP y pasa la
+     dirección real de entrada vía registro EAX (slot popa)
+   - Task: nueva función task_cleanup_dead() que libera pilas de tareas
+     DEAD y las marca FREE
+   - Scheduler: nueva función scheduler_mark_dead() para marcar tarea
+     actual como DEAD desde el trampoline
+   - Scheduler: scheduler_tick() ya no sobrescribe estado DEAD con READY,
+     llama a task_cleanup_dead() en cada tick, salta tareas no-READY
+   - Process (PCB): nuevo subsistema process/ con struct Process que unifica
+     PID, estado, VMM address space, kernel stack y Task asociada
+   - Process: process_create() crea PCB + VMM space + Task, los vincula
+   - Process: process_destroy() mata proceso y libera VMM space
+   - Process: process_switch() cambia CR3 al address space del proceso
+     destino, llamado desde scheduler_tick() en cada context switch
+   - Task: struct Task ahora tiene campo Process* process (back-pointer)
+   - Task: task_create() retorna Task* (antes void), acepta Process* opcional
+   - Task: task_cleanup_dead() limpia process = nullptr
+   - Scheduler: scheduler_mark_dead() también marca Process DEAD si la
+     tarea era su main_task
+    - Scheduler: scheduler_tick() captura prev_idx y llama process_switch()
+      al migrar entre procesos
+    - Bugfix CRÍTICO: task_create() tenía orden de registros invertido en el
+      stack inicial (popa espera EDI primero, EAX último; el código ponía
+      EAX primero, EDI último). Causaba call *%eax = 0 → page fault.
+    - Bugfix: scheduler_tick() saltaba el índice 0 de la tabla de tareas
+      porque inicializaba next=0 y luego incrementaba antes de revisar,
+      haciendo que la iteración 16 saliera sin revisar [0].
+      Fix: usar current_task (-1) como inicial, así (0+1)%16=0 revisa [0].
+    - Validación en QEMU: process_create + process_switch + VMM switch +
+      context switch funcionando correctamente. Salida:
+      "Process 1 created" → "Process 1 alive"
+    - Keyboard: driver reescrito con soporte completo de Shift (izq/der),
+      Caps Lock, y keymap US completo de 128 scancodes
+    - Keyboard: corrección de múltiples entradas incorrectas en el keymap
+      original (0x0C, 0x0D, 0x1A, 0x1B, 0x27-0x29, 0x35)
+    - Keyboard: keymap dual lower/upper para caracteres shift + símbolos
+      especiales (!@#$%^&*()_+{}:\"<>?)
+    - Shell: nuevos comandos whoami, uname, uptime, yes, true, false,
+      wc <file>, head <file>, rev <file>
+    - Shell: help actualizado con todos los comandos
+
+
+8. OBSERVACIONES
+------------------------------------------------------------------------------
+  - El kernel arranca correctamente con: make run-serial
+    (usa qemu -kernel kernel.bin, no necesita ISO)
+  - La salida serial se ve con: make run-serial
+  - No hay .gitignore: objetos .o, kernel.bin y kernel.iso trackeados
+  - Un solo commit ("init commit")
+  - Versión reportada: "NemoOS v1.0"
+  - Comandos del shell en español/portugués
 
 ===============================================================================

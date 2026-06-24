@@ -23,16 +23,26 @@ static void execute(const char* c)
         terminal.write(" clear\n");
         terminal.write(" echo <texto>\n");
         terminal.write(" about\n");
+        terminal.write(" whoami\n");
+        terminal.write(" uname\n");
+        terminal.write(" uptime\n");
+        terminal.write(" yes [texto]\n");
+        terminal.write(" true\n");
+        terminal.write(" false\n");
         terminal.write(" ticks\n");
         terminal.write(" mem\n");
         terminal.write(" pages\n");
         terminal.write(" alloc\n");
         terminal.write(" free\n");
-        terminal.write(" kmalloc\n");
-        terminal.write(" halt\n");
+    terminal.write(" kmalloc\n");
+    terminal.write(" testheap\n");
+    terminal.write(" halt\n");
         terminal.write(" ls\n");
         terminal.write(" touch <file>\n");
         terminal.write(" cat <file>\n");
+        terminal.write(" wc <file>\n");
+        terminal.write(" head <file>\n");
+        terminal.write(" rev <file>\n");
         terminal.write(" write <file> <text>\n");
         terminal.write(" mkdir <dir>\n");
         terminal.write(" cd <dir>\n");
@@ -44,7 +54,7 @@ static void execute(const char* c)
     }
     else if (strcmp(c, "about") == 0)
     {
-        terminal.write("NemoOS v0.9\n");
+        terminal.write("NemoOS v1.0\n");
         terminal.write("Kernel x86 escrito en C++20\n");
     }
     else if (strcmp(c, "ticks") == 0)
@@ -117,7 +127,51 @@ static void execute(const char* c)
 
         terminal.write("PTR: ");
         terminal.write(buf);
+
+        if(ptr)
+        {
+            char* data = (char*)ptr;
+
+            for(int i = 0; i < 10; i++)
+                data[i] = 'A' + i;
+
+            data[10] = 0;
+
+            terminal.write(" DATA: ");
+            terminal.write(data);
+        }
+
         terminal.write("\n");
+    }
+    else if(strcmp(c, "testheap") == 0)
+    {
+        void* a = kmalloc(16);
+        void* b = kmalloc(32);
+        void* c = kmalloc(64);
+
+        if(!a || !b || !c)
+        {
+            terminal.write("alloc fail\n");
+            return;
+        }
+
+        ((char*)a)[0] = 'X';
+        ((char*)b)[0] = 'Y';
+        ((char*)c)[0] = 'Z';
+
+        kfree(b);
+        kfree(a);
+
+        void* d = kmalloc(16);
+
+        terminal.write("reuse: ");
+        terminal.write(d == a ? "yes" : "no");
+        terminal.write("\n");
+
+        kfree(c);
+        kfree(d);
+
+        terminal.write("heap ok\n");
     }
     else if(strcmp(c, "ls") == 0)
     {
@@ -138,6 +192,108 @@ static void execute(const char* c)
         {
             asm volatile("hlt");
         }
+    }
+    else if (strcmp(c, "whoami") == 0)
+    {
+        terminal.write("nemo\n");
+    }
+    else if (strcmp(c, "uname") == 0)
+    {
+        terminal.write("NemoOS\n");
+    }
+    else if (strcmp(c, "uptime") == 0)
+    {
+        char buf[32];
+        terminal.write("up ");
+        itoa(timer_ticks, buf);
+        terminal.write(buf);
+        terminal.write(" ticks\n");
+    }
+    else if (strcmp(c, "true") == 0)
+    {
+    }
+    else if (strcmp(c, "false") == 0)
+    {
+        terminal.write("false\n");
+    }
+    else if (strncmp(c, "yes", 3) == 0)
+    {
+        const char* text = c + 3;
+
+        while(*text == ' ') text++;
+
+        if(*text == 0)
+            text = "y";
+
+        for(int i = 0; i < 5; i++)
+        {
+            terminal.write(text);
+            terminal.write("\n");
+        }
+    }
+    else if(strncmp(c, "wc ", 3) == 0)
+    {
+        char buffer[256];
+
+        if(!ramfs_read(c + 3, buffer))
+        {
+            terminal.write("File not found\n");
+            return;
+        }
+
+        int count = 0;
+
+        for(int i = 0; buffer[i]; i++)
+            count++;
+
+        char buf[16];
+        itoa(count, buf);
+        terminal.write(buf);
+        terminal.write(" ");
+        terminal.write(c + 3);
+        terminal.write("\n");
+    }
+    else if(strncmp(c, "head ", 5) == 0)
+    {
+        char buffer[256];
+
+        if(!ramfs_read(c + 5, buffer))
+        {
+            terminal.write("File not found\n");
+            return;
+        }
+
+        int lines = 0;
+
+        for(int i = 0; buffer[i] && lines < 5; i++)
+        {
+            terminal.putchar(buffer[i]);
+
+            if(buffer[i] == '\n')
+                lines++;
+        }
+
+        terminal.write("\n");
+    }
+    else if(strncmp(c, "rev ", 4) == 0)
+    {
+        char buffer[256];
+
+        if(!ramfs_read(c + 4, buffer))
+        {
+            terminal.write("File not found\n");
+            return;
+        }
+
+        int len = 0;
+
+        for(int i = 0; buffer[i]; i++)
+            len++;
+
+        for(int i = len - 1; i >= 0; i--)
+            terminal.putchar(buffer[i]);
+
+        terminal.write("\n");
     }
     else if (strncmp(c, "echo ", 5) == 0)
     {

@@ -6,8 +6,13 @@ static int tail = 0;
 
 void keyboard_buffer_push(char c)
 {
+    int next = (head + 1) % 256;
+
+    if(next == tail)
+        return;
+
     buffer[head] = c;
-    head = (head + 1) % 256;
+    head = next;
 }
 
 bool keyboard_buffer_pop(char* c)

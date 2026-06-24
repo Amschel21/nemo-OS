@@ -1,6 +1,6 @@
 # NemoOS
 
-**NemoOS** es un sistema operativo hobby desde cero para la arquitectura **x86 (i386)**. Escrito en **C++20** y **Assembly (GAS)**, bootea con **GRUB/Multiboot** y se ejecuta en **QEMU**.
+**NemoOS v1.0** es un sistema operativo hobby desde cero para la arquitectura **x86 (i386)**. Escrito en **C++20** y **Assembly (GAS)**, bootea con **GRUB/Multiboot** y se ejecuta en **QEMU**.
 
 ## Estado actuals
 
@@ -11,7 +11,8 @@
 - GDT (6 entradas: null, kernel code/data, user code/data, TSS)
 - IDT (256 entradas: ISR0, IRQ0, IRQ1, page fault, syscall int 0x80)
 - PIC (8259 remapeado a interrupciones 32-47)
-- Paginación (mapeo identidad primeros 4MB)
+- Paginación (identity mapping de toda la RAM, hasta 512MB)
+- VMM (Virtual Memory Manager): address spaces, map/unmap/switch
 - PMM (gestor de memoria física basado en bitmap)
 - Asignador simple (bump allocator en 16MB, sin liberación)
 - RAMFS (sistema de archivos en RAM, 128 inodos)

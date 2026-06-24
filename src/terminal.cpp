@@ -1,6 +1,28 @@
 #include "terminal.hpp"
 #include "arch/x86/ports.hpp"
 
+static void serial_init()
+{
+    outb(0x3F8 + 1, 0x00);
+    outb(0x3F8 + 3, 0x80);
+    outb(0x3F8 + 0, 0x03);
+    outb(0x3F8 + 1, 0x00);
+    outb(0x3F8 + 3, 0x03);
+    outb(0x3F8 + 2, 0xC7);
+}
+
+static void serial_putchar(char c)
+{
+    while(!(inb(0x3F8 + 5) & 0x20));
+    outb(0x3F8, c);
+
+    if(c == '\n')
+    {
+        while(!(inb(0x3F8 + 5) & 0x20));
+        outb(0x3F8, '\r');
+    }
+}
+
 static const int WIDTH = 80;
 static const int HEIGHT = 25;
 
@@ -20,6 +42,9 @@ void Terminal::init()
     row = 0;
     col = 0;
     clear();
+
+    serial_init();
+    serial_putchar('\n');
 }
 
 void Terminal::clear()
@@ -63,6 +88,8 @@ void Terminal::update_cursor()
 
 void Terminal::putchar(char c)
 {
+    serial_putchar(c);
+
     if (c == '\n') {
         col = 0;
         row++;

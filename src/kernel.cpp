@@ -8,12 +8,24 @@
 #include "memory/pmm_bitmap.hpp"
 #include "memory/kmalloc.hpp"
 #include "memory/paging.hpp"
+#include "memory/vmm.hpp"
 #include "fs/ramfs.hpp"
 #include "scheduler/task.hpp"
 #include "scheduler/scheduler.hpp"
 #include "drivers/timer_ticks.hpp"
 #include "kernel/panic.hpp"
 #include "interrupts/tss.hpp"
+#include "process/process.hpp"
+
+static void test_process_entry()
+{
+    terminal.write("Process 1 alive\n");
+
+    while(1)
+    {
+        asm volatile("hlt");
+    }
+}
 
 static unsigned int syscall_get_ticks()
 {
@@ -53,6 +65,8 @@ extern "C" void kernel_main(
 
     paging_init();
 
+    vmm_init();
+
     kmalloc_init();
 
     ramfs_init();
@@ -67,7 +81,7 @@ extern "C" void kernel_main(
 
     timer_init(100);
 
-    terminal.write("NemoOS v0.9\n");
+    terminal.write("NemoOS v1.0\n");
 
     unsigned int ticks =
     syscall_get_ticks();
@@ -130,7 +144,12 @@ terminal.write("\n");
 
     scheduler_init();
 
-   
+    Process* p1 = process_create(test_process_entry);
+
+    if(p1)
+        terminal.write("Process 1 created\n");
+    else
+        terminal.write("Process 1 FAILED\n");
 
     while(true)
     {

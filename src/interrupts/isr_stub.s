@@ -6,6 +6,7 @@
 .extern irq_handler
 .extern keyboard_irq_handler
 .extern page_fault_handler
+.extern scheduler_tick
 
 isr0:
     cli
@@ -18,6 +19,12 @@ irq0:
     pusha
 
     call irq_handler
+
+    push %esp
+    call scheduler_tick
+    add $4, %esp
+
+    mov %eax, %esp
 
     popa
 
@@ -38,5 +45,7 @@ page_fault_stub:
     call page_fault_handler
 
     popa
+
+    add $4, %esp
 
     iret

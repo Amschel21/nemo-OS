@@ -31,9 +31,12 @@ void pmm_init(uint32_t memory_mb)
     total_pages =
         (memory_mb * 1024 * 1024) / PAGE_SIZE;
 
-    static constexpr uint32_t RESERVED_PAGES = 256;
+    static constexpr uint32_t RESERVED_PAGES = 1024;
 
     used_pages = RESERVED_PAGES;
+
+    if(used_pages > total_pages)
+        used_pages = total_pages;
 
     for(uint32_t i = 0; i < sizeof(bitmap); i++)
         bitmap[i] = 0;

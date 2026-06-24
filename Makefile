@@ -41,12 +41,21 @@ kernel.iso: kernel.bin
 
 run: kernel.iso
 	qemu-system-i386 \
-	-cdrom kernel.iso \
-	-m 512M
+	-kernel kernel.bin \
+	-m 512M \
+	-no-reboot
+
+run-serial: kernel.bin
+	qemu-system-i386 \
+	-kernel kernel.bin \
+	-m 512M \
+	-no-reboot \
+	-serial stdio
 
 debug: kernel.iso
 	qemu-system-i386 \
-	-cdrom kernel.iso \
+	-kernel kernel.bin \
+	-m 512M \
 	-s \
 	-S
 
