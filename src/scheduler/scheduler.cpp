@@ -26,7 +26,7 @@ static int find_next(int from)
     {
         int idx = (from + step) % total;
         Process* p = process_get(idx);
-        if(p && p->state != TASK_DEAD)
+        if(p && p->state != TASK_DEAD && p->state != TASK_BLOCKED)
             return idx;
     }
 
@@ -47,11 +47,17 @@ extern "C" uint32_t scheduler_tick(uint32_t current_esp)
             ? process_get(prev)
             : nullptr;
 
-    if(prev_p &&
-       prev_p->state == TASK_RUNNING)
+    if(prev_p)
     {
-        prev_p->state = TASK_READY;
-        prev_p->saved_esp = current_esp;
+        if(prev_p->state == TASK_RUNNING)
+        {
+            prev_p->state = TASK_READY;
+            prev_p->saved_esp = current_esp;
+        }
+        else if(prev_p->state == TASK_BLOCKED)
+        {
+            prev_p->saved_esp = current_esp;
+        }
     }
 
     int next_idx = find_next(prev);
@@ -73,6 +79,18 @@ extern "C" uint32_t scheduler_tick(uint32_t current_esp)
         return next_p->saved_esp;
 
     return next_p->kernel_stack_top;
+}
+
+int scheduler_current_idx()
+{
+    return current_process;
+}
+
+Process* scheduler_current_process()
+{
+    if(current_process < 0)
+        return nullptr;
+    return process_get(current_process);
 }
 
 void scheduler_init()

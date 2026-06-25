@@ -1,12 +1,14 @@
 #include "process.hpp"
 #include "../memory/kmalloc.hpp"
 #include "../memory/pmm_bitmap.hpp"
+#include "../memory/vmm.hpp"
 #include "../interrupts/tss.hpp"
 #include "../kernel/panic.hpp"
 #include "../libk/memory.hpp"
 #include "../libk/itoa.hpp"
 #include "../terminal.hpp"
 #include "../user/user_mode.hpp"
+#include "../ipc/ipc.hpp"
 
 #define KERNEL_STACK_BYTES  (2 * 4096)
 
@@ -16,6 +18,8 @@ static uint32_t next_pid = 1;
 
 static Process* process_table[MAX_PROCESSES];
 static int process_count = 0;
+
+extern int scheduler_current_idx();
 
 static void push(uint32_t*& sp, uint32_t v)
 {
@@ -114,30 +118,41 @@ static uint32_t* build_kernel_frame(
     return sp;
 }
 
-Process* process_create(TaskEntry entry)
+Process* process_create(TaskEntry entry, uint32_t user_entry, uint32_t user_esp)
 {
+    (void)entry;
+
     Process* proc = (Process*)kmalloc(sizeof(Process));
 
     if(!proc)
         return nullptr;
 
     proc->pid = next_pid++;
+    proc->parent_pid = 1;
     proc->state = TASK_READY;
     proc->ring = RING_USER;
+    proc->exit_code = 0;
 
-    // TEMPORAL:
-    // usar espacio kernel para evitar el VMM roto
-    proc->address_space = vmm_get_kernel_space();
+    proc->address_space = vmm_create_space();
+
+    if(!proc->address_space)
+    {
+        kfree(proc);
+        return nullptr;
+    }
+
+    user_install_into_space(proc->address_space);
 
     proc->kernel_stack = 0;
     proc->kernel_stack_top = 0;
     proc->kernel_stack_bottom = 0;
     proc->saved_esp = 0;
 
-    proc->user_entry = USER_CODE_ADDR;
-    proc->user_esp   = USER_STACK_TOP;
+    proc->user_entry = user_entry;
+    proc->user_esp   = user_esp;
 
     proc->main_task = nullptr;
+    proc->msg_queue = nullptr;
 
     uint32_t kstack_bottom = 0;
 
@@ -180,9 +195,11 @@ Process* process_create_kernel(TaskEntry entry)
         return nullptr;
 
     proc->pid = next_pid++;
+    proc->parent_pid = 1;
     proc->state = TASK_READY;
     proc->ring = RING_KERNEL;
     proc->address_space = vmm_get_kernel_space();
+    proc->exit_code = 0;
     proc->kernel_stack = 0;
     proc->kernel_stack_top = 0;
     proc->kernel_stack_bottom = 0;
@@ -190,6 +207,7 @@ Process* process_create_kernel(TaskEntry entry)
     proc->user_entry = 0;
     proc->user_esp = 0;
     proc->main_task = nullptr;
+    proc->msg_queue = nullptr;
 
     uint32_t kstack_bottom = 0;
     uint8_t* kstack = (uint8_t*)alloc_kernel_stack(kstack_bottom);
@@ -228,6 +246,9 @@ void process_destroy(Process* proc)
         pmm_free_page((void*)proc->kernel_stack_bottom);
         pmm_free_page((void*)(proc->kernel_stack_bottom + 4096));
     }
+
+    if(proc->msg_queue)
+        kfree(proc->msg_queue);
 
     for(int i = 0; i < process_count; i++)
     {
@@ -303,6 +324,42 @@ void process_first_enter(Process* proc)
 
     asm volatile("cli");
     process_first_enter_asm(proc->kernel_stack_top);
+}
+
+Process* process_current()
+{
+    int idx = scheduler_current_idx();
+    if(idx < 0) return nullptr;
+    return process_get(idx);
+}
+
+void process_exit_current(int code)
+{
+    Process* me = process_current();
+
+    if(me)
+    {
+        me->exit_code = code;
+        me->state = TASK_DEAD;
+    }
+
+    while(1) asm volatile("hlt");
+}
+
+void process_set_entry(Process* proc, uint32_t entry, uint32_t user_esp)
+{
+    if(!proc)
+        return;
+
+    proc->user_entry = entry;
+    proc->user_esp = user_esp;
+
+    uint32_t* sp = build_user_frame(
+        (uint32_t*)(proc->kernel_stack_bottom + 8192),
+        entry,
+        user_esp);
+
+    proc->kernel_stack_top = (uint32_t)sp;
 }
 
 extern "C" void schedule_from_irq0();

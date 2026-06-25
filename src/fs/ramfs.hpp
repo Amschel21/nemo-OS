@@ -1,35 +1,13 @@
 #pragma once
+#include "vfs.hpp"
 
-typedef unsigned int uint32_t;
+// RAM root creation
+vfs_node* ramfs_create_root();
 
-struct RamNode
-{
-    char name[32];
+// File creation helpers (relative to root)
+vfs_node* ramfs_create_file(vfs_node* parent, const char* name);
+vfs_node* ramfs_create_dir(vfs_node* parent, const char* name);
 
-    bool used;
-    bool is_dir;
-
-    RamNode* parent;
-
-    char data[256];
-    uint32_t size;
-};
-
-void ramfs_init();
-
-bool ramfs_create_file(const char* name);
-bool ramfs_create_dir(const char* name);
-
-void ramfs_ls();
-
-bool ramfs_write(
-    const char* name,
-    const char* text);
-
-bool ramfs_read(
-    const char* name,
-    char* buffer);
-
-bool ramfs_cd(const char* name);
-
-const char* ramfs_pwd();
+// Convenience (resolve then create)
+vfs_node* ramfs_touch(const char* name);
+vfs_node* ramfs_mkdir(const char* name);

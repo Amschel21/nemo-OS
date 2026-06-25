@@ -31,3 +31,11 @@ char* strcpy(char* dst, const char* src)
 
     return ret;
 }
+
+unsigned int strlen(const char* s)
+{
+    unsigned int len = 0;
+    while(s[len])
+        len++;
+    return len;
+}

@@ -67,4 +67,30 @@ clean:
 
 rebuild: clean all
 
-.PHONY: all run debug clean rebuild
+test-ata: kernel.bin
+	qemu-system-i386 \
+	-kernel kernel.bin \
+	-m 512M \
+	-no-reboot \
+	-serial stdio \
+	-drive file=disk.img,format=raw,if=ide
+
+test-net: kernel.bin
+	qemu-system-i386 \
+	-kernel kernel.bin \
+	-m 512M \
+	-no-reboot \
+	-serial stdio \
+	-drive file=disk.img,format=raw,if=ide \
+	-netdev user,id=net0 \
+	-device rtl8139,netdev=net0
+
+test-ata-nographic: kernel.bin
+	qemu-system-i386 \
+	-kernel kernel.bin \
+	-m 512M \
+	-no-reboot \
+	-drive file=disk.img,format=raw,if=ide \
+	-nographic
+
+.PHONY: all run debug clean rebuild test-ata test-ata-nographic

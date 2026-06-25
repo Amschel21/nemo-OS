@@ -27,7 +27,43 @@ vmm_space_t vmm_create_space()
         (uint32_t*)kernel_space;
 
     for(int i = 0; i < 1024; i++)
-        new_pd[i] = current_pd[i];
+    {
+        uint32_t entry = current_pd[i];
+
+        if(!(entry & VMM_PRESENT))
+        {
+            new_pd[i] = 0;
+            continue;
+        }
+
+        if(entry & VMM_USER)
+        {
+            uint32_t* new_pt = (uint32_t*)pmm_alloc_page();
+
+            if(!new_pt)
+            {
+                for(int j = 0; j < i; j++)
+                {
+                    if(new_pd[j] & VMM_USER)
+                        pmm_free_page((void*)(new_pd[j] & 0xFFFFF000));
+                }
+
+                pmm_free_page(new_pd);
+                return 0;
+            }
+
+            uint32_t* old_pt = (uint32_t*)(entry & 0xFFFFF000);
+
+            for(int j = 0; j < 1024; j++)
+                new_pt[j] = old_pt[j];
+
+            new_pd[i] = ((uint32_t)new_pt) | (entry & 0xFFF);
+        }
+        else
+        {
+            new_pd[i] = entry;
+        }
+    }
 
     return (vmm_space_t)(uint32_t)new_pd;
 }
@@ -44,6 +80,19 @@ void vmm_destroy_space(vmm_space_t space)
 {
     if(!space)
         return;
+
+    uint32_t* pd = (uint32_t*)space;
+
+    for(int i = 0; i < 1024; i++)
+    {
+        uint32_t entry = pd[i];
+
+        if(!(entry & VMM_PRESENT))
+            continue;
+
+        if(entry & VMM_USER)
+            pmm_free_page((void*)(entry & 0xFFFFF000));
+    }
 
     pmm_free_page((void*)space);
 }
@@ -111,5 +160,3 @@ int vmm_unmap(
 
     return 0;
 }
-
-

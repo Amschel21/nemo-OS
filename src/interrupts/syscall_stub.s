@@ -1,6 +1,7 @@
 .global syscall_stub
 
 .extern syscall_dispatch
+.extern scheduler_tick
 
 syscall_stub:
 
@@ -16,6 +17,11 @@ syscall_stub:
     add $16, %esp
 
     mov %eax, 28(%esp)
+
+    push %esp
+    call scheduler_tick
+    add $4, %esp
+    mov %eax, %esp
 
     popa
 
