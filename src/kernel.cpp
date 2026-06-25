@@ -28,6 +28,7 @@
 #include "drivers/ata.hpp"
 #include "drivers/pci.hpp"
 #include "drivers/rtl8139.hpp"
+#include "net/net.hpp"
 
 extern "C" void shell_task();
 
@@ -40,6 +41,7 @@ static void shell_task_main()
     while(1)
     {
         shell_tick();
+        net_poll();
         asm volatile("hlt");
     }
 }
@@ -237,6 +239,8 @@ extern "C" void kernel_main(
     {
         terminal.write("rtl8139: no device\n");
     }
+
+    net_init();
 
     terminal.write("NemoOS v1.0\n");
 

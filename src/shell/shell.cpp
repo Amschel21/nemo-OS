@@ -19,6 +19,7 @@
 #include "../libk/string.hpp"
 #include "../memory/vmm.hpp"
 #include "../arch/x86/ports.hpp"
+#include "../net/net.hpp"
 
 extern volatile int stress_prime_count;
 extern volatile int stress_current;
@@ -65,6 +66,7 @@ static void execute(const char* c)
         terminal.write(" reboot\n");
         terminal.write(" ls\n");
         terminal.write(" pci\n");
+        terminal.write(" ping <ip>\n");
         terminal.write(" netstat\n");
         terminal.write(" lsdisk\n");
         terminal.write(" rd <dev> <lba>\n");
@@ -246,6 +248,58 @@ static void execute(const char* c)
         {
             terminal.write("error\n");
         }
+    }
+    else if(strncmp(c, "ping ", 5) == 0)
+    {
+        const char* ip_str = c + 5;
+        uint8_t ip[4] = {0, 0, 0, 0};
+        int val = 0;
+        int oct = 0;
+        int parsed = 0;
+
+        for(const char* p = ip_str; *p; p++)
+        {
+            if(*p >= '0' && *p <= '9')
+            {
+                val = val * 10 + (*p - '0');
+            }
+            else if(*p == '.' && oct < 4)
+            {
+                ip[oct++] = (uint8_t)val;
+                val = 0;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if(oct == 3 && val <= 255)
+        {
+            ip[3] = (uint8_t)val;
+            parsed = 1;
+        }
+
+        if(!parsed)
+        {
+            terminal.write("usage: ping a.b.c.d\n");
+            return;
+        }
+
+        terminal.write("ping");
+        char buf[16];
+
+        for(int i = 0; i < 4; i++)
+        {
+            terminal.write(".");
+            itoa(ip[i], buf);
+            terminal.write(buf);
+        }
+
+        terminal.write("\n");
+
+        arp_send_request(ip);
+        icmp_send_echo(ip, 1, 1);
     }
     else if(strcmp(c, "pci") == 0)
     {

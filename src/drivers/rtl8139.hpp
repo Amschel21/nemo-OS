@@ -16,3 +16,4 @@ int  rtl8139_init_all();
 int  rtl8139_count();
 const rtl8139_dev* rtl8139_get_device(int index);
 int  rtl8139_send_packet(const rtl8139_dev* dev, const void* data, int len);
+int  rtl8139_poll(const rtl8139_dev* dev, void* buf, int* len);

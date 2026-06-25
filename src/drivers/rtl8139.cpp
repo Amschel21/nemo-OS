@@ -17,6 +17,7 @@ struct rtl_priv
     uint8_t* rx_buffer;
     uint8_t* tx_buffer[4];
     int      tx_cur;
+    int      rx_offset;
 };
 
 static rtl_priv* privs[RTL8139_MAX_DEVICES];
@@ -63,10 +64,6 @@ static uint16_t rtl_read16(const rtl8139_dev* dev, uint8_t reg)
     return inw(dev->io_base + reg);
 }
 
-static uint32_t rtl_read32(const rtl8139_dev* dev, uint8_t reg)
-{
-    return inl(dev->io_base + reg);
-}
 
 static int rtl8139_init_one(const pci_device* pci_dev, int index)
 {
@@ -85,7 +82,8 @@ static int rtl8139_init_one(const pci_device* pci_dev, int index)
     int timeout = 0;
     while((rtl_read8(dev, RTL_CR) & CR_RST) && timeout < 1000)
     {
-        for(volatile int i = 0; i < 1000; i++);
+        for(int i = 0; i < 1000; i++)
+            asm volatile("pause");
         timeout++;
     }
 
@@ -132,6 +130,7 @@ static int rtl8139_init_one(const pci_device* pci_dev, int index)
     }
 
     priv->tx_cur = 0;
+    priv->rx_offset = 0;
     privs[index] = priv;
 
     dev->initialized = 1;
@@ -194,4 +193,58 @@ int rtl8139_send_packet(const rtl8139_dev* dev, const void* data, int len)
     priv->tx_cur = (priv->tx_cur + 1) % 4;
 
     return len;
+}
+
+int rtl8139_poll(const rtl8139_dev* dev, void* buf, int* len)
+{
+    if(!dev || !dev->initialized || !buf || !len)
+        return -1;
+
+    int i_index = 0;
+    for(int i = 0; i < rtl_count; i++)
+    {
+        if(&rtl_devices[i] == dev)
+        {
+            i_index = i;
+            break;
+        }
+    }
+
+    rtl_priv* priv = privs[i_index];
+
+    uint16_t cbr = rtl_read16(dev, 0x3A);
+    int offset = priv->rx_offset;
+
+    if(offset >= (int)cbr)
+        return 0;
+
+    uint16_t rx_status = *(volatile uint16_t*)(priv->rx_buffer + offset);
+    uint16_t rx_size   = *(volatile uint16_t*)(priv->rx_buffer + offset + 2);
+
+    if(!(rx_status & 0x0001))
+        return 0;
+
+    rx_size &= 0x3FFF;
+
+    if(rx_size < 4)
+        return 0;
+
+    rx_size -= 4;
+
+    if(rx_size > (uint16_t)*len)
+        rx_size = (uint16_t)*len;
+
+    for(int j = 0; j < rx_size; j++)
+        ((uint8_t*)buf)[j] = priv->rx_buffer[offset + 4 + j];
+
+    *len = rx_size;
+
+    offset += rx_size + 4;
+    offset = (offset + 3) & ~3;
+
+    priv->rx_offset = offset;
+
+    rtl_write16(dev, 0x38, offset - 16);
+
+    return 1;
 }
