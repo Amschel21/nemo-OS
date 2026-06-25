@@ -4,9 +4,9 @@
 
 1. DESCRIPCIÓN GENERAL
 ------------------------------------------------------------------------------
-NemoOS es un sistema operativo hobby para la arquitectura x86 (i386) escrito
-desde cero en C++20 y Assembly (GAS/AT&T). Bootea mediante GRUB/Multiboot y
-se ejecuta en QEMU. El compilador usado es GNU g++ con flags freestanding
+NemoOS es un sistema operativo para la arquitectura x86 (i386) escrito desde
+cero en C++20 y Assembly (GAS/AT&T). Bootea mediante GRUB/Multiboot y se
+ejecuta en QEMU. El compilador usado es GNU g++ con flags freestanding
 (-ffreestanding -fno-exceptions -fno-rtti). No usa biblioteca estándar;
 implementa sus propias funciones libk (memcpy, memset, strcmp, strcpy, itoa).
 
@@ -188,7 +188,7 @@ implementa sus propias funciones libk (memcpy, memset, strcmp, strcpy, itoa).
 
 
 7. CAMBIOS REALIZADOS (vs reporte anterior)
-------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   - PMM: páginas reservadas de 256 a 1024 (0-4MB, cubre kernel + VGA)
   - Paging: identity mapping expandido de 4MB a toda la RAM disponible
   - Paging: nuevas API públicas paging_map_page(), paging_map_identity()
@@ -262,6 +262,33 @@ implementa sus propias funciones libk (memcpy, memset, strcmp, strcpy, itoa).
     - Shell: nuevos comandos whoami, uname, uptime, yes, true, false,
       wc <file>, head <file>, rev <file>
     - Shell: help actualizado con todos los comandos
+    - Bugfix CRÍTICO (isr_stub.s): gp_stub intercambiaba gp_err y gp_eip
+      (almacenaba error code en gp_eip y leía basura de ESP+52 como gp_err).
+      page_fault_stub leía pf_err de ESP+52 (basura) en vez de ESP+32
+      (error code real). Corregidos ambos offsets.
+    - Bugfix (irq.cpp): terminal.write(".") cada 100 ticks desde IRQ0
+      causaba reentrancia en el terminal VGA. Eliminado el debug print.
+    - Bugfix (vmm.cpp): terminal.write() e itoa() durante CR3 switch
+      y creación de address space. Eliminados los debug prints.
+    - Bugfix (scheduler.cpp): terminal.write("SWITCH->") en cada tick
+      del timer (~100 Hz) inundaba la pantalla. Eliminado el debug print.
+    - Bugfix (gp.cpp): gp_handler dumpaba el stack local del handler
+      (uint32_t* p = esp_now) en vez del frame de interrupción real
+      (parámetro stack[]). Corregido para iterar sobre stack[].
+    - Bugfix (keyboard_buffer.cpp): keyboard_buffer_pop() usaba
+      cli/sti incondicional en vez de save/restore EFLAGS. Cuando se
+      llamaba desde el syscall handler (int 0x80 con IF=0), el sti
+      re-habilitaba interrupciones prematuramente durante la syscall.
+      Fix: pushfl/popfl para preservar estado original de IF.
+    - Bugfix (sleep.cpp): sleep_ms() trataba el parámetro de milisegundos
+      como ticks del timer (100Hz). sleep_ms(1000) dormía 10s en vez de 1s.
+      Fix: dividir ms/10 para convertir a ticks (1 tick = 10ms a 100Hz).
+    - Bugfix (process.cpp): process_destroy() solo liberaba la página baja
+      del kernel stack (kernel_stack_bottom), la página superior
+      (kernel_stack_bottom + 4096) se fugaba. Fix: liberar ambas páginas.
+    - Eliminadas tareas de prueba test_task() y test_task2() de kernel.cpp
+      que mostraban [T=N] y [X=N] en pantalla. NemoOS ahora solo ejecuta
+      el shell como proceso real de sistema. Sin tareas simuladas/demo.
 
 
 8. OBSERVACIONES
@@ -273,5 +300,23 @@ implementa sus propias funciones libk (memcpy, memset, strcmp, strcpy, itoa).
   - Un solo commit ("init commit")
   - Versión reportada: "NemoOS v1.0"
   - Comandos del shell en español/portugués
+  - Depuración: se eliminaron todos los debug prints del IRQ handler,
+    scheduler_tick, VMM switch y VMM create_space que causaban:
+      * Reentrancia en terminal (IRQ0 escribiendo al VGA)
+      * Inundación de pantalla (SWITCH-> ~100 veces/segundo)
+      * Operaciones de I/O peligrosas durante CR3 switch
+  - Excepciones: gp_stub y page_fault_stub ahora leen correctamente
+    los códigos de error y EIP de la pila de interrupción
+  - keyboard_buffer_pop: ahora preserva el estado de IF (pushfl/popfl)
+    en vez de hacer cli/sti incondicional
+  - sleep_ms: convertido a milisegundos reales (ms/10 ticks a 100Hz)
+  - process_destroy: ahora libera ambas páginas del kernel stack (8KB)
+  - Eliminadas tareas demo test_task/test_task2 ([T=N], [X=N])
+  - NemoOS arranca directamente al shell sin tareas simuladas
+
+  Nota: El scheduler está configurado para multitarea real (round-robin).
+  Actualmente solo el shell se ejecuta como proceso del sistema.
+  Cuando se implementen procesos de usuario (cargador ELF, exec, fork),
+  el scheduler gestionará múltiples procesos sin cambios en su núcleo.
 
 ===============================================================================

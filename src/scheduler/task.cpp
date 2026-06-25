@@ -1,5 +1,6 @@
 #include "task.hpp"
 #include "../memory/kmalloc.hpp"
+#include "../memory/pmm_bitmap.hpp"
 #include "../libk/memory.hpp"
 
 static Task tasks[16];
@@ -10,7 +11,7 @@ extern "C" void task_trampoline();
 
 Task* task_create(TaskEntry entry, Process* process)
 {
-    uint32_t* stack = (uint32_t*)kmalloc(4096);
+    uint32_t* stack = (uint32_t*)pmm_alloc_page();
 
     if(!stack)
         return nullptr;
@@ -75,7 +76,7 @@ void task_cleanup_dead()
         if(tasks[i].state == TASK_DEAD)
         {
             if(tasks[i].stack_bottom)
-                kfree((void*)tasks[i].stack_bottom);
+                pmm_free_page((void*)tasks[i].stack_bottom);
 
             tasks[i].state = TASK_FREE;
             tasks[i].pid = 0;

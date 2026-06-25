@@ -116,30 +116,65 @@ void kmalloc_init()
 static void heap_grow()
 {
     uint32_t pages = (HEAP_GROW + 4095) / 4096;
-    heap_header* new_block = nullptr;
+    void* first = pmm_alloc_page();
 
-    for(uint32_t i = 0; i < pages; i++)
+    if(!first)
+        return;
+
+    bool contiguous = true;
+
+    for(uint32_t i = 1; i < pages; i++)
     {
         void* page = pmm_alloc_page();
 
         if(!page)
-            return;
+        {
+            contiguous = false;
+            break;
+        }
 
-        if(i == 0)
-            new_block = (heap_header*)page;
+        if((uint32_t)page != (uint32_t)first + i * 4096)
+        {
+            pmm_free_page(page);
+            contiguous = false;
+            break;
+        }
     }
 
-    if(!new_block)
+    if(!contiguous)
+    {
+        for(uint32_t i = 0; i < pages; i++)
+        {
+            void* page = pmm_alloc_page();
+
+            if(!page)
+                break;
+
+            heap_header* block = (heap_header*)page;
+
+            block->size = 4096;
+            block->magic = HEAP_MAGIC;
+
+            heap_end = (uint8_t*)page + 4096;
+
+            set_footer(block);
+
+            list_append(block);
+        }
+
         return;
+    }
 
-    new_block->size = pages * 4096;
-    new_block->magic = HEAP_MAGIC;
+    heap_header* block = (heap_header*)first;
 
-    heap_end = (uint8_t*)new_block + new_block->size;
+    block->size = pages * 4096;
+    block->magic = HEAP_MAGIC;
 
-    set_footer(new_block);
+    heap_end = (uint8_t*)first + block->size;
 
-    list_append(new_block);
+    set_footer(block);
+
+    list_append(block);
 }
 
 void* kmalloc(size_t size)

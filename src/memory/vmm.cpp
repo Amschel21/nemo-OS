@@ -17,12 +17,14 @@ vmm_space_t vmm_get_kernel_space()
 
 vmm_space_t vmm_create_space()
 {
-    uint32_t* new_pd = (uint32_t*)pmm_alloc_page();
+    uint32_t* new_pd =
+        (uint32_t*)pmm_alloc_page();
 
     if(!new_pd)
         return 0;
 
-    uint32_t* current_pd = (uint32_t*)kernel_space;
+    uint32_t* current_pd =
+        (uint32_t*)kernel_space;
 
     for(int i = 0; i < 1024; i++)
         new_pd[i] = current_pd[i];
@@ -30,9 +32,20 @@ vmm_space_t vmm_create_space()
     return (vmm_space_t)(uint32_t)new_pd;
 }
 
+void vmm_switch(vmm_space_t space)
+{
+    asm volatile(
+        "mov %0, %%cr3"
+        :
+        : "r"(space));
+}
+
 void vmm_destroy_space(vmm_space_t space)
 {
-    (void)space;
+    if(!space)
+        return;
+
+    pmm_free_page((void*)space);
 }
 
 int vmm_map(
@@ -56,7 +69,7 @@ int vmm_map(
         for(int i = 0; i < 1024; i++)
             pt[i] = 0;
 
-        pd[pd_idx] = ((uint32_t)pt) | VMM_PRESENT | VMM_WRITABLE;
+        pd[pd_idx] = ((uint32_t)pt) | VMM_PRESENT | VMM_WRITABLE | VMM_USER;
     }
 
     uint32_t* pt = (uint32_t*)(pd[pd_idx] & 0xFFFFF000);
@@ -99,10 +112,4 @@ int vmm_unmap(
     return 0;
 }
 
-void vmm_switch(vmm_space_t space)
-{
-    asm volatile(
-        "mov %0, %%cr3"
-        :
-        : "r"(space));
-}
+

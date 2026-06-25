@@ -3,10 +3,12 @@
 
 extern "C" void idt_flush(unsigned int);
 
+extern "C" void isr0();
 extern "C" void irq0();
 extern "C" void irq1();
 extern "C" void page_fault_stub();
 extern "C" void syscall_stub();
+extern "C" void gp_stub();
 
 static IDTEntry idt[256];
 static IDTPtr idt_ptr;
@@ -33,13 +35,16 @@ void idt_init()
     idt_ptr.base =
         (uint32_t)&idt;
 
+    uint32_t default_addr =
+        (uint32_t)default_isr;
+
     for(int i = 0; i < 256; i++)
     {
-        idt[i].base_low = 0;
-        idt[i].base_high = 0;
-        idt[i].selector = 0;
-        idt[i].always0 = 0;
-        idt[i].flags = 0;
+        idt_set_gate(
+            i,
+            default_addr,
+            0x08,
+            0x8E);
     }
 
     idt_set_gate(
@@ -60,6 +65,12 @@ void idt_init()
         0x08,
         0x8E);
     
+    idt_set_gate(
+    13,
+    (uint32_t)gp_stub,
+    0x08,
+    0x8E);
+
     idt_set_gate(
     14,
     (uint32_t)page_fault_stub,

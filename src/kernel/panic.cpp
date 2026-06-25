@@ -6,7 +6,7 @@ void panic(
     const char* file,
     int line)
 {
-    terminal.clear();
+    //terminal.clear();
 
     terminal.write("\n");
     terminal.write("=================================\n");

@@ -16,30 +16,28 @@
 #include "kernel/panic.hpp"
 #include "interrupts/tss.hpp"
 #include "process/process.hpp"
+#include "libk/itoa.hpp"
+#include "user/user_mode.hpp"
+#include "ipc/sleep.hpp"
 
-static void test_process_entry()
+extern "C" void shell_task();
+
+static void shell_task_main()
 {
-    terminal.write("Process 1 alive\n");
+    terminal.write("[shell] up\n");
+
+    asm volatile("sti");
 
     while(1)
     {
+        shell_tick();
         asm volatile("hlt");
     }
 }
 
-static unsigned int syscall_get_ticks()
+extern "C" void shell_task()
 {
-    unsigned int result;
-
-    asm volatile(
-        "mov $1, %%eax \n"
-        "int $0x80     \n"
-        : "=a"(result)
-        :
-        : "memory"
-    );
-
-    return result;
+    shell_task_main();
 }
 
 extern "C" void kernel_main(
@@ -53,8 +51,7 @@ extern "C" void kernel_main(
         PANIC("Invalid multiboot magic");
     }
 
-    multiboot_init(
-        (multiboot_info_t*)addr);
+    multiboot_init((multiboot_info_t*)addr);
 
     if(total_memory_mb == 0)
     {
@@ -81,82 +78,37 @@ extern "C" void kernel_main(
 
     timer_init(100);
 
+    sleep_init();
+
     terminal.write("NemoOS v1.0\n");
-
-    unsigned int ticks =
-    syscall_get_ticks();
-
-terminal.write("Ticks: ");
-
-char buf[16];
-
-int pos = 0;
-
-unsigned int n = ticks;
-
-if(n == 0)
-{
-    buf[pos++] = '0';
-}
-else
-{
-    char tmp[16];
-    int t = 0;
-
-    while(n > 0)
-    {
-        tmp[t++] = '0' + (n % 10);
-        n /= 10;
-    }
-
-    while(t > 0)
-    {
-        buf[pos++] = tmp[--t];
-    }
-}
-
-buf[pos] = 0;
-
-terminal.write(buf);
-terminal.write("\n");
-
-    terminal.write("Testing syscall...\n");
-
-    asm volatile(
-    "mov $0, %%eax\n"
-    "int $0x80\n"
-    :
-    :
-    : "eax"
-);
-
-    asm volatile(
-    "mov $1, %%eax\n"
-    "int $0x80\n"
-    :
-    :
-    : "eax"
-);
-
-    asm volatile("sti");
 
     shell_init();
 
     scheduler_init();
 
-    Process* p1 = process_create(test_process_entry);
+    Process* shell_proc =
+        process_create_kernel(shell_task);
 
-    if(p1)
-        terminal.write("Process 1 created\n");
-    else
-        terminal.write("Process 1 FAILED\n");
-
-    while(true)
+    if(!shell_proc)
     {
-        shell_tick();
+        terminal.write(
+            "kernel: process creation failed\n");
 
-        scheduler_run();
+        while(1)
+        {
+            asm volatile("hlt");
+        }
+    }
 
+    terminal.write(
+        "[kernel] system ready\n");
+
+    asm volatile("sti");
+
+    process_first_enter(shell_proc);
+
+    while(1)
+    {
         asm volatile("hlt");
     }
 }

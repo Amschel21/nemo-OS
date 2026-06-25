@@ -7,4 +7,4 @@ void panic(
 
 void kernel_panic(const char* msg);
 
-#define PANIC(msg) kernel_panic(msg)
+#define PANIC(msg) panic(msg, __FILE__, __LINE__)

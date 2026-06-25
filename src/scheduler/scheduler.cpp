@@ -1,72 +1,88 @@
 #include "scheduler.hpp"
-#include "task.hpp"
-#include "../memory/kmalloc.hpp"
 #include "../process/process.hpp"
+#include "../terminal.hpp"
+#include "../libk/itoa.hpp"
+#include "../interrupts/tss.hpp"
 
-static int current_task = -1;
-static uint32_t idle_esp = 0;
+static int current_process = -1;
 
 extern "C" void scheduler_mark_dead()
 {
-    if(current_task >= 0)
-    {
-        Task* tasks = task_table();
-        Task* task = &tasks[current_task];
-        task->state = TASK_DEAD;
+    Process* p = (current_process >= 0)
+        ? process_get(current_process) : nullptr;
 
-        if(task->process && task->process->main_task == task)
-            task->process->state = TASK_DEAD;
-    }
+    if(p) p->state = TASK_DEAD;
 }
+
+extern "C" uint32_t scheduler_tick(uint32_t current_esp);
+
+static int find_next(int from)
+{
+    int total = process_total();
+    if(total == 0)
+        return -1;
+
+    for(int step = 1; step <= total; step++)
+    {
+        int idx = (from + step) % total;
+        Process* p = process_get(idx);
+        if(p && p->state != TASK_DEAD)
+            return idx;
+    }
+
+    return -1;
+}
+
 
 extern "C" uint32_t scheduler_tick(uint32_t current_esp)
 {
-    Task* tasks = task_table();
-    int prev_idx = current_task;
+    int total = process_total();
 
-    if(current_task < 0)
+    if(total == 0)
+        return current_esp;
+
+    int prev = current_process;
+    Process* prev_p =
+        (prev >= 0)
+            ? process_get(prev)
+            : nullptr;
+
+    if(prev_p &&
+       prev_p->state == TASK_RUNNING)
     {
-        idle_esp = current_esp;
-    }
-    else
-    {
-        if(tasks[current_task].state == TASK_RUNNING)
-        {
-            tasks[current_task].state = TASK_READY;
-            tasks[current_task].esp = current_esp;
-        }
-    }
-
-    task_cleanup_dead();
-
-    int next = current_task;
-    int attempts = 0;
-
-    do {
-        next = (next + 1) % 16;
-        attempts++;
-    } while(attempts < 16 && tasks[next].state != TASK_READY);
-
-    if(attempts >= 16)
-    {
-        current_task = -1;
-        return idle_esp;
+        prev_p->state = TASK_READY;
+        prev_p->saved_esp = current_esp;
     }
 
-    Process* prev_proc = (prev_idx >= 0 && tasks[prev_idx].process)
-                            ? tasks[prev_idx].process : nullptr;
-    Process* next_proc = tasks[next].process
-                            ? tasks[next].process : nullptr;
-    process_switch(prev_proc, next_proc);
+    int next_idx = find_next(prev);
 
-    tasks[next].state = TASK_RUNNING;
-    current_task = next;
-    return tasks[next].esp;
+    Process* next_p =
+        (next_idx >= 0)
+            ? process_get(next_idx)
+            : nullptr;
+
+    if(!next_p)
+        return current_esp;
+
+    process_switch(prev_p, next_p);
+
+    next_p->state = TASK_RUNNING;
+    current_process = next_idx;
+
+    if(next_p->saved_esp)
+        return next_p->saved_esp;
+
+    return next_p->kernel_stack_top;
 }
 
 void scheduler_init()
 {
-    current_task = -1;
+    current_process = -1;
+}
+
+void scheduler_mark_current(int idx)
+{
+    current_process = idx;
 }
 
 void scheduler_run()

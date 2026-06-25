@@ -1,5 +1,6 @@
 #include "tss.hpp"
 #include "gdt.hpp"
+#include "../libk/memory.hpp"
 
 extern "C" void tss_flush();
 extern "C" uint32_t stack_top;
@@ -20,11 +21,13 @@ void tss_set_kernel_stack(uint32_t stack)
 
 void tss_init()
 {
+    memset(&tss, 0, sizeof(TSSEntry));
+
     uint32_t base =
         (uint32_t)&tss;
 
     uint32_t limit =
-        sizeof(TSSEntry);
+        sizeof(TSSEntry) - 1;
 
     gdt_set_gate(
         5,

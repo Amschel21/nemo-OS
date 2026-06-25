@@ -17,10 +17,18 @@ void keyboard_buffer_push(char c)
 
 bool keyboard_buffer_pop(char* c)
 {
+    unsigned long flags;
+    asm volatile("pushfl; popl %0; cli" : "=r"(flags));
+
     if (tail == head)
+    {
+        asm volatile("pushl %0; popfl" : : "r"(flags));
         return false;
+    }
 
     *c = buffer[tail];
     tail = (tail + 1) % 256;
+
+    asm volatile("pushl %0; popfl" : : "r"(flags));
     return true;
 }
